@@ -4,11 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      build_only:
-        description: 首次接入准备：只构建并签名，不部署。正常发布不要勾选。
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -30,6 +25,7 @@ jobs:
         go test -race -cover ./...
         go build ./cmd/transform
         pip install -r requirements-ci.txt
+        python -m unittest discover -s tests -v
         python scripts/download_ci_tool.py gitleaks
     - run: gitleaks git --redact --no-banner .
     - run: |
@@ -91,7 +87,6 @@ jobs:
         retention-days: 7
   release:
     needs: build
-    if: vars.ENABLE_GITOPS_RELEASE == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     environment: production
     permissions:
@@ -137,21 +132,18 @@ jobs:
         path: .foundation
         token: ${{ secrets.FOUNDATION_RELEASE_TOKEN }}
         persist-credentials: false
-    - name: Prepare GitHub-only registration
+    - name: Prepare deployment update tools
       working-directory: .foundation
       run: |
         pip install PyYAML==6.0.3 ruamel.yaml==0.19.1
         python scripts/download_ci_tool.py kubeseal
-        python -m unittest discover -s tests -v
-    - name: Register or update the service automatically
-      if: inputs.build_only != true
+    - name: Update the registered service
       env:
         FOUNDATION_TOKEN: ${{ secrets.FOUNDATION_RELEASE_TOKEN }}
         IMAGE: ${{ needs.build.outputs.image }}
         IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
         COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
-        REGISTRY_READ_TOKEN: ${{ secrets.REGISTRY_READ_TOKEN }}
-      run: python .foundation/scripts/register_translate.py
+      run: python scripts/update_gitops.py
     - name: Verify desired state, deployment and business smoke test
       env:
         APP_NAME: transform
@@ -160,10 +152,3 @@ jobs:
       run: |
         python scripts/wait_application.py
         python scripts/wait_release.py
-
-      if: inputs.build_only != true
-    - name: Enable automatic deployment after first successful release
-      if: inputs.build_only != true
-      env:
-        FOUNDATION_TOKEN: ${{ secrets.FOUNDATION_RELEASE_TOKEN }}
-      run: python .foundation/scripts/register_translate.py --enable-delivery

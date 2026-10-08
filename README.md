@@ -88,9 +88,9 @@ CI 运行格式检查、`go vet`、race tests、构建、gitleaks、Helm 与 kub
 
 `deploy` 沿用模板的 Gateway、Cilium、ServiceMonitor 约定，默认域名为 `transform.apps.makima.sbs`，镜像为 `ghcr.io/yinlerens/translate`，按实际仓库和集群覆盖。仅运行一个 API Deployment。探针与指标不通过公网路由；Cilium 只允许 DNS、遥测和 `api.cohere.com:443` 出站，调整上游地址时需同步 `externalDomains`。容器 UID/GID 10001，禁止提权，只读根文件系统，90 秒终止宽限期。HTTPRoute 请求/后端超时为 75/70 秒，以覆盖最长 60 秒的模型调用，需要 Gateway 支持 HTTPRoute timeouts。
 
-当前系统的生产部署全部通过 GitHub Actions：第一次添加 Actions Secret `COHERE_API_KEY` 后，在 `delivery` 页面点击 **Run workflow**，选择 `main`，保持“首次接入准备”未勾选。工作流自动登记应用、加密保存模型和镜像拉取密钥、发布经过验证的真实镜像 digest，并通过 Argo CD 自动部署。
+当前系统的 `transform` 应用已经在平台登记，生产部署通过 GitHub Actions 更新现有 GitOps 配置。推送 `main` 或在 `delivery` 页面点击 **Run workflow** 都会检查、构建、签名、更新镜像 digest，并通过 Argo CD 自动部署。工作流不会创建新应用、namespace 或镜像拉取身份。
 
-首次发布成功后自动设置 `ENABLE_GITOPS_RELEASE=true`，之后推送 `main` 就会自动更新。更换模型密钥时，编辑 GitHub 的 `COHERE_API_KEY` 再点一次 **Run workflow**。发布最后会执行一次真实翻译；变绿表示运行和模型调用都通过检查。发布授权和签名设置已经为此仓库准备好。
+更换模型密钥时，编辑 GitHub 的 `COHERE_API_KEY` 再点一次 **Run workflow**；流程将密钥加密保存并触发服务更新。未提供新密钥时沿用集群已有 Secret。发布最后会执行一次真实翻译；变绿表示运行和模型调用都通过检查。发布授权和签名设置已经为此仓库准备好。
 
 ## 官方依据
 
