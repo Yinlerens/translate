@@ -1,0 +1,65 @@
+{{- range $name, $workload := .Values.workloads }}
+---
+{{- if eq $workload.kind "CronJob" }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $.Values.app }}-{{ $name }}
+spec:
+  schedule: {{ $workload.schedule | quote }}
+  timeZone: {{ $workload.timeZone | default "Etc/UTC" | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          {{- with $workload.annotations }}
+          annotations: {{ toJson . }}
+          {{- end }}
+          labels: {app.kubernetes.io/name: {{ $.Values.app }}, component: {{ $name }}, environment: {{ $.Values.environment }}, foundation.makima.sbs/database-client: {{ $workload.database | default false | toString | quote }}}
+        spec:
+          restartPolicy: Never
+          {{- include "application.pod" (dict "root" $ "name" $name "workload" $workload) | nindent 10 }}
+{{- else }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Values.app }}-{{ $name }}
+spec:
+  replicas: {{ if hasKey $workload "replicas" }}{{ $workload.replicas }}{{ else }}1{{ end }}
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 300
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  selector:
+    matchLabels: {app.kubernetes.io/name: {{ $.Values.app }}, component: {{ $name }}}
+  template:
+    metadata:
+      {{- with $workload.annotations }}
+      annotations: {{ toJson . }}
+      {{- end }}
+      labels: {app.kubernetes.io/name: {{ $.Values.app }}, component: {{ $name }}, environment: {{ $.Values.environment }}, foundation.makima.sbs/database-client: {{ $workload.database | default false | toString | quote }}}
+    spec:
+      {{- include "application.pod" (dict "root" $ "name" $name "workload" $workload) | nindent 6 }}
+{{- if $workload.http }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Values.app }}-{{ $name }}
+  labels: {app.kubernetes.io/name: {{ $.Values.app }}, component: {{ $name }}}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: {{ $.Values.app }}, component: {{ $name }}}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+{{- end }}
+{{- end }}
+{{- end }}

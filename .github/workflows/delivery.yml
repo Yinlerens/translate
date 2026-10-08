@@ -1,0 +1,128 @@
+name: delivery
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: delivery-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with: {fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with: {python-version: '3.13'}
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with: {go-version-file: go.mod, cache: true}
+      - run: |
+          test -z "$(gofmt -l cmd internal)"
+          go vet ./...
+          go test -race -cover ./...
+          go build ./cmd/transform
+          pip install -r requirements-ci.txt
+          python scripts/download_ci_tool.py gitleaks
+      - run: gitleaks git --redact --no-banner .
+      - run: |
+          python scripts/download_ci_tool.py helm
+          python scripts/download_ci_tool.py kubeconform
+      - run: |
+          helm lint deploy --set image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
+          helm template transform deploy --set image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 > /tmp/app.yaml
+          python -c 'import yaml;from pathlib import Path;docs=[d for d in yaml.safe_load_all(Path("/tmp/app.yaml").read_text()) if d and d["apiVersion"] in {"v1","apps/v1","batch/v1","networking.k8s.io/v1"}];Path("/tmp/native.yaml").write_text(yaml.safe_dump_all(docs))'
+          kubeconform -strict -summary -kubernetes-version 1.36.0 /tmp/native.yaml
+  build:
+    needs: validate
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.name.outputs.image }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with: {persist-credentials: false}
+      - id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        id: build
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.name.outputs.image }}:${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+      - run: python scripts/download_ci_tool.py trivy
+      - env:
+          IMAGE: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for platform in amd64 arm64; do
+            trivy image --platform linux/$platform --format json --output scan-$platform.json "$IMAGE"
+            python scripts/check_vulnerabilities.py scan-$platform.json
+            trivy image --platform linux/$platform --format cyclonedx --output sbom-$platform.json "$IMAGE"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: supply-chain
+          path: |
+            scan-*.json
+            sbom-*.json
+          retention-days: 7
+  release:
+    needs: build
+    if: vars.ENABLE_GITOPS_RELEASE == 'true'
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with: {persist-credentials: false}
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: python scripts/download_ci_tool.py cosign
+      - env:
+          IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          cosign sign --yes --use-signing-config=false --key env://COSIGN_PRIVATE_KEY --tlog-upload=false "$IMAGE"
+          cosign verify --key cosign.pub --insecure-ignore-tlog "$IMAGE" > /tmp/verified-signature.json
+      - name: Record verified digest in GitOps
+        env:
+          APP_NAME: transform
+          FOUNDATION_TOKEN: ${{ secrets.FOUNDATION_RELEASE_TOKEN }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          pip install PyYAML==6.0.3 ruamel.yaml==0.19.1
+          python scripts/update_gitops.py
+      - name: Verify desired state, deployment and business smoke test
+        env:
+          APP_NAME: transform
+          FOUNDATION_TOKEN: ${{ secrets.FOUNDATION_RELEASE_TOKEN }}
+          ARGO_READ_TOKEN: ${{ secrets.ARGO_READ_TOKEN }}
+        run: |
+          python scripts/wait_application.py
+          python scripts/wait_release.py
+

@@ -1,0 +1,51 @@
+app: transform
+environment: production
+environmentKind: production
+expiresAt: ''
+host: transform.apps.makima.sbs
+publicPaths: ['^/api(/.*)?$']
+image:
+  repository: ghcr.io/yinlerens/transform
+  digest: ''
+  pullPolicy: IfNotPresent
+  pullSecret: ghcr-pull
+releaseVersion: initial
+quota:
+  requests.cpu: '300m'
+  requests.memory: 384Mi
+  limits.memory: 1Gi
+  pods: '4'
+  services: '2'
+database:
+  enabled: false
+telemetryEndpoint: http://alloy.observability.svc:4318
+monitoring:
+  enabled: true
+gateway:
+  enabled: true
+  sectionName: https
+  name: apps
+  namespace: gateway-system
+externalDomains:
+  - api.cohere.com
+routes:
+  - path: /api
+    workload: api
+    timeouts: {request: 75s, backendRequest: 70s}
+workloads:
+  api:
+    kind: Deployment
+    role: api
+    http: true
+    port: 8080
+    terminationGracePeriodSeconds: 90
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 256Mi}
+    database: false
+    env:
+      COHERE_BASE_URL: https://api.cohere.com
+      COHERE_MODEL: north-small-translate-1-0
+      COHERE_TIMEOUT: 60s
+      COHERE_MAX_TOKENS: '8192'
+    secretEnv:
+      COHERE_API_KEY: {name: transform-api, key: cohere-api-key}
