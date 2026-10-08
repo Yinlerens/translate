@@ -1,7 +1,7 @@
 # transform
 
-在当前服务器自己部署，照着 [操作步骤](https://github.com/Yinlerens/cloud-foundation/blob/main/docs/translate-deployment.md) 做。
-第一次在 GitHub 仓库的 Actions Secrets 添加 `COHERE_API_KEY`，再到 Actions 的 delivery 页面点击 Run workflow，服务器会自动登记并部署服务。以后推送 main 分支就自动更新，全程不需要 SSH。
+服务已接入当前集群，地址为 https://transform.apps.makima.sbs/api；更新和密钥轮换见 [操作步骤](https://github.com/Yinlerens/cloud-foundation/blob/main/docs/translate-deployment.md)。
+推送 main 分支会自动检查、构建和部署，发布最后执行真实翻译验收。
 
 基于上级 `application-template` 改造的 Go 翻译微服务，调用 Cohere **North Small Translate**（`north-small-translate-09-2026`），由模型自动识别原文语言，固定翻译成简体中文。保留模板的 `/api` 路由、健康检查、Prometheus、OpenTelemetry、请求追踪、非 root 容器、多架构构建、Helm 与供应链检查。服务无状态，无需数据库、worker 或前端。
 
