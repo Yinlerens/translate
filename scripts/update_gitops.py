@@ -57,7 +57,7 @@ def release_proposal(current, image, model_key=''):
         if not workload or workload.get('secretEnv', {}).get('COHERE_API_KEY') != expected:
             raise RuntimeError('应用未引用预期的模型 Secret，停止密钥轮换。')
         files[SECRET] = seal_model_key(model_key)
-        workload.setdefault('annotations', {})['foundation.makima.sbs/key-revision'] = str(uuid.uuid4())
+        workload.setdefault('annotations', {})['foundation.makima.sbs/rollout-revision'] = str(uuid.uuid4())
     files[VALUES] = yaml.safe_dump(v, sort_keys=False)
     return files
 

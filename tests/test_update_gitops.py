@@ -49,7 +49,7 @@ class UpdateTests(unittest.TestCase):
             seal.assert_called_once_with('model-secret')
         self.assertEqual(set(files), {update.VALUES, update.SECRET})
         result = yaml.safe_load(files[update.VALUES])
-        self.assertIn('foundation.makima.sbs/key-revision', result['workloads']['api']['annotations'])
+        self.assertIn('foundation.makima.sbs/rollout-revision', result['workloads']['api']['annotations'])
         self.assertNotIn('model-secret', ''.join(files.values()))
 
     def test_wrong_identity_mutable_digest_and_secret_reference_are_rejected(self):
