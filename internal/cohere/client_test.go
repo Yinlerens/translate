@@ -30,7 +30,7 @@ func TestTranslateContract(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
 		}
-		if payload.Model != "north-small-translate-1-0" || payload.Stream || payload.MaxTokens != 8192 {
+		if payload.Model != "north-small-translate-09-2026" || payload.Stream || payload.MaxTokens != 8192 {
 			t.Errorf("bad model settings: %+v", payload)
 		}
 		if len(payload.Messages) != 1 || payload.Messages[0].Role != "user" || payload.Messages[0].Content != "Translate everything that follows into Chinese (Simplified):\n\nHello\n world! " {
@@ -39,7 +39,7 @@ func TestTranslateContract(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"generation-1","finish_reason":"COMPLETE","message":{"content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"你好"},{"type":"text","text":"，世界！\n"}]},"usage":{"tokens":{"input_tokens":12,"output_tokens":8},"billed_units":{"input_tokens":10,"output_tokens":8}}}`))
 	}))
 	defer srv.Close()
-	client := New(config.Config{BaseURL: srv.URL, APIKey: "test-provider-key", Model: "north-small-translate-1-0", Timeout: time.Second, MaxTokens: 8192}, nil)
+	client := New(config.Config{BaseURL: srv.URL, APIKey: "test-provider-key", Model: "north-small-translate-09-2026", Timeout: time.Second, MaxTokens: 8192}, nil)
 	result, err := client.Translate(context.Background(), "Hello\n world! ")
 	if err != nil {
 		t.Fatal(err)

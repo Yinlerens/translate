@@ -22,7 +22,7 @@ func Load() (Config, error) {
 		Environment: env("APP_ENVIRONMENT", "development"), Version: env("RELEASE_VERSION", "development"),
 		Role: env("WORKLOAD_ROLE", "api"), APIKey: strings.TrimSpace(os.Getenv("COHERE_API_KEY")),
 		BaseURL: strings.TrimRight(env("COHERE_BASE_URL", "https://api.cohere.com"), "/"),
-		Model:   env("COHERE_MODEL", "north-small-translate-1-0"),
+		Model:   env("COHERE_MODEL", "north-small-translate-09-2026"),
 	}
 	u, err := url.Parse(c.BaseURL)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && u.Scheme != "http") {

@@ -18,7 +18,7 @@ func TestDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Model != "north-small-translate-1-0" || c.BaseURL != "https://api.cohere.com" || c.Timeout != time.Minute || c.MaxTokens != 8192 {
+	if c.Model != "north-small-translate-09-2026" || c.BaseURL != "https://api.cohere.com" || c.Timeout != time.Minute || c.MaxTokens != 8192 {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
 }

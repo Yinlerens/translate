@@ -40,7 +40,7 @@ func TestTranslationEndToEnd(t *testing.T) {
 	}))
 	defer upstream.Close()
 	var logs bytes.Buffer
-	handler := testHandler(config.Config{BaseURL: upstream.URL, Model: "north-small-translate-1-0", APIKey: "provider-key", Version: "test-release", Timeout: time.Second}, &logs)
+	handler := testHandler(config.Config{BaseURL: upstream.URL, Model: "north-small-translate-09-2026", APIKey: "provider-key", Version: "test-release", Timeout: time.Second}, &logs)
 	response := request(handler, "POST", "/api/translate", `{"文本":"secret-source-text"}`, "application/json; charset=utf-8")
 	if response.Code != 200 {
 		t.Fatalf("status %d: %s", response.Code, response.Body)
@@ -49,7 +49,7 @@ func TestTranslationEndToEnd(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.TranslatedText != "你好！" || result.TargetLanguage != "简体中文" || result.Model != "north-small-translate-1-0" {
+	if result.TranslatedText != "你好！" || result.TargetLanguage != "简体中文" || result.Model != "north-small-translate-09-2026" {
 		t.Fatalf("bad result: %+v", result)
 	}
 	if result.FinishReason != "已完成" || result.Usage == nil || result.Usage.Tokens.InputTokens != 12 || result.Usage.BilledUnits.InputTokens != 10 {
@@ -157,7 +157,7 @@ func TestAutoSourceAndFixedChineseTarget(t *testing.T) {
 }
 
 func TestHealthAndNotConfigured(t *testing.T) {
-	handler := testHandler(config.Config{AppName: "transform", Model: "north-small-translate-1-0", Version: "test"}, io.Discard)
+	handler := testHandler(config.Config{AppName: "transform", Model: "north-small-translate-09-2026", Version: "test"}, io.Discard)
 	for path, status := range map[string]int{"/healthz": 200, "/readyz": 503, "/api": 200, "/api/languages": 200, "/metrics": 200} {
 		response := request(handler, "GET", path, "", "")
 		if response.Code != status {

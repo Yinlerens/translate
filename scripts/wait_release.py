@@ -27,7 +27,7 @@ while time.monotonic() < deadline:
             data = json.load(response)
             assert response.status == 200 and response.headers['x-release-version'] == version
             assert data['译文'].strip() and data['目标语言'] == '简体中文'
-            assert data['模型'] == 'north-small-translate-1-0' and data['完成状态'] == '已完成'
+            assert data['模型'] == 'north-small-translate-09-2026' and data['完成状态'] == '已完成'
         print('目标版本已通过可信 HTTPS 响应，并完成一次真实翻译。')
         break
     except (urllib.error.URLError, TimeoutError, AssertionError, KeyError, json.JSONDecodeError):

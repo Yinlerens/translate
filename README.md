@@ -3,7 +3,7 @@
 在当前服务器自己部署，照着 [操作步骤](https://github.com/Yinlerens/cloud-foundation/blob/main/docs/translate-deployment.md) 做。
 第一次在 GitHub 仓库的 Actions Secrets 添加 `COHERE_API_KEY`，再到 Actions 的 delivery 页面点击 Run workflow，服务器会自动登记并部署服务。以后推送 main 分支就自动更新，全程不需要 SSH。
 
-基于上级 `application-template` 改造的 Go 翻译微服务，调用 Cohere **North Small Translate**（`north-small-translate-1-0`），由模型自动识别原文语言，固定翻译成简体中文。保留模板的 `/api` 路由、健康检查、Prometheus、OpenTelemetry、请求追踪、非 root 容器、多架构构建、Helm 与供应链检查。服务无状态，无需数据库、worker 或前端。
+基于上级 `application-template` 改造的 Go 翻译微服务，调用 Cohere **North Small Translate**（`north-small-translate-09-2026`），由模型自动识别原文语言，固定翻译成简体中文。保留模板的 `/api` 路由、健康检查、Prometheus、OpenTelemetry、请求追踪、非 root 容器、多架构构建、Helm 与供应链检查。服务无状态，无需数据库、worker 或前端。
 
 ## 本地运行
 
@@ -34,7 +34,7 @@ Invoke-RestMethod -Uri http://localhost:8080/api/translate -Method Post -Content
   "生成编号": "cohere-generation-id",
   "译文": "你好，世界！",
   "目标语言": "简体中文",
-  "模型": "north-small-translate-1-0",
+  "模型": "north-small-translate-09-2026",
   "完成状态": "已完成",
   "用量": {
     "词元数量": { "输入词元": 18, "输出词元": 6 },
@@ -65,7 +65,7 @@ Invoke-RestMethod -Uri http://localhost:8080/api/translate -Method Post -Content
 | --- | --- |
 | `COHERE_API_KEY` | 必需，通过环境变量或 Secret 注入 |
 | `COHERE_BASE_URL` | `https://api.cohere.com`，自动追加 `/v2/chat`；仅 localhost 允许 HTTP |
-| `COHERE_MODEL` | `north-small-translate-1-0` |
+| `COHERE_MODEL` | `north-small-translate-09-2026` |
 | `COHERE_TIMEOUT` | `60s`，可设置为大于 0 且不超过 60 秒 |
 | `COHERE_MAX_TOKENS` | `8192`，范围 1–16384；过低可能导致截断错误 |
 | `HTTP_ADDR` | `:8080` |
