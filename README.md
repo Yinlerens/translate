@@ -57,7 +57,7 @@ Invoke-RestMethod -Uri http://localhost:8080/api/translate -Method Post -Content
 | `GET /readyz` | 本地配置就绪，不消耗模型额度、不保证上游即时可用 |
 | `GET /metrics` | Prometheus 指标（保留 `foundation_http_*` 命名） |
 
-所有响应带 `X-Request-ID` 与 `X-Release-Version`。客户端调用翻译、健康检查、指标及语言信息接口均无需提供访问令牌。服务通过 `COHERE_API_KEY` 调用 Cohere 模型。设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后启用 OTLP HTTP traces，支持 W3C `traceparent` 并追踪 Cohere 请求。应用 JSON 日志使用中文消息、级别和字段名（例如 `时间`、`级别`、`消息`、`请求编号`、`状态码`），默认应用、环境和版本分别显示为 `翻译服务`、`开发` 和 `开发版`。所有业务 JSON 响应字段、错误类型、提示、完成状态和语言名称均使用中文；客户端须按新字段读取响应。HTTP 头、接口路径、模型 ID、语言代码、版本摘要和 Prometheus 指标名保留技术协议标识。
+所有响应带 `X-Request-ID` 与 `X-Release-Version`。启用追踪后还提供 `X-Trace-ID`，与日志中的 `链路编号` 一致，可直接用于 Grafana Tempo 的 Trace ID 查询。客户端调用翻译、健康检查、指标及语言信息接口均无需提供访问令牌。服务通过 `COHERE_API_KEY` 调用 Cohere 模型。设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后启用 OTLP HTTP traces，支持 W3C `traceparent` 并追踪 Cohere 请求。应用 JSON 日志使用中文消息、级别和字段名（例如 `时间`、`级别`、`消息`、`请求编号`、`状态码`），默认应用、环境和版本分别显示为 `翻译服务`、`开发` 和 `开发版`。所有业务 JSON 响应字段、错误类型、提示、完成状态和语言名称均使用中文；客户端须按新字段读取响应。HTTP 头、接口路径、模型 ID、语言代码、版本摘要和 Prometheus 指标名保留技术协议标识。
 
 ## 配置
 

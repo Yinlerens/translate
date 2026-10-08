@@ -89,6 +89,9 @@ func New(cfg config.Config, client *cohere.Client, logger *slog.Logger) http.Han
 		}
 		w.Header().Set("X-Request-ID", id)
 		w.Header().Set("X-Release-Version", cfg.Version)
+		if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
+			w.Header().Set("X-Trace-ID", sc.TraceID().String())
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		defer func() {
