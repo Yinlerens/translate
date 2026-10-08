@@ -1,5 +1,8 @@
 # transform
 
+在当前服务器自己部署，照着 [操作步骤](https://github.com/Yinlerens/cloud-foundation/blob/main/docs/translate-deployment.md) 做。
+第一次 SSH 登录服务器运行 `deploy-translate`，按提示输入 Cohere 密钥；以后推送 main 分支，或在 Actions 的 delivery 页面点击 Run workflow 更新。
+
 基于上级 `application-template` 改造的 Go 翻译微服务，调用 Cohere **North Small Translate**（`north-small-translate-1-0`），由模型自动识别原文语言，固定翻译成简体中文。保留模板的 `/api` 路由、健康检查、Prometheus、OpenTelemetry、请求追踪、非 root 容器、多架构构建、Helm 与供应链检查。服务无状态，无需数据库、worker 或前端。
 
 ## 本地运行
