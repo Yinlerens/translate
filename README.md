@@ -1,7 +1,7 @@
 # transform
 
 在当前服务器自己部署，照着 [操作步骤](https://github.com/Yinlerens/cloud-foundation/blob/main/docs/translate-deployment.md) 做。
-第一次 SSH 登录服务器运行 `deploy-translate`，按提示输入 Cohere 密钥；以后推送 main 分支，或在 Actions 的 delivery 页面点击 Run workflow 更新。
+第一次在 GitHub 仓库的 Actions Secrets 添加 `COHERE_API_KEY`，再到 Actions 的 delivery 页面点击 Run workflow，服务器会自动登记并部署服务。以后推送 main 分支就自动更新，全程不需要 SSH。
 
 基于上级 `application-template` 改造的 Go 翻译微服务，调用 Cohere **North Small Translate**（`north-small-translate-1-0`），由模型自动识别原文语言，固定翻译成简体中文。保留模板的 `/api` 路由、健康检查、Prometheus、OpenTelemetry、请求追踪、非 root 容器、多架构构建、Helm 与供应链检查。服务无状态，无需数据库、worker 或前端。
 
@@ -86,15 +86,11 @@ CI 运行格式检查、`go vet`、race tests、构建、gitleaks、Helm 与 kub
 
 ## Helm 与发布
 
-`deploy` 沿用模板的 Gateway、Cilium、ServiceMonitor 约定，默认域名为 `transform.apps.makima.sbs`，镜像为 `ghcr.io/yinlerens/transform`，按实际仓库和集群覆盖。仅运行一个 API Deployment。探针与指标不通过公网路由；Cilium 只允许 DNS、遥测和 `api.cohere.com:443` 出站，调整上游地址时需同步 `externalDomains`。容器 UID/GID 10001，禁止提权，只读根文件系统，90 秒终止宽限期。HTTPRoute 请求/后端超时为 75/70 秒，以覆盖最长 60 秒的模型调用，需要 Gateway 支持 HTTPRoute timeouts。
+`deploy` 沿用模板的 Gateway、Cilium、ServiceMonitor 约定，默认域名为 `transform.apps.makima.sbs`，镜像为 `ghcr.io/yinlerens/translate`，按实际仓库和集群覆盖。仅运行一个 API Deployment。探针与指标不通过公网路由；Cilium 只允许 DNS、遥测和 `api.cohere.com:443` 出站，调整上游地址时需同步 `externalDomains`。容器 UID/GID 10001，禁止提权，只读根文件系统，90 秒终止宽限期。HTTPRoute 请求/后端超时为 75/70 秒，以覆盖最长 60 秒的模型调用，需要 Gateway 支持 HTTPRoute timeouts。
 
-部署前在应用 namespace 创建 `transform-api` Secret，包含 `cohere-api-key`；私有 GHCR 镜像还需 `ghcr-pull`。然后以**真实镜像 digest**部署：
+当前系统的生产部署全部通过 GitHub Actions：第一次添加 Actions Secret `COHERE_API_KEY` 后，在 `delivery` 页面点击 **Run workflow**，选择 `main`，保持“首次接入准备”未勾选。工作流自动登记应用、加密保存模型和镜像拉取密钥、发布经过验证的真实镜像 digest，并通过 Argo CD 自动部署。
 
-```powershell
-helm upgrade --install transform deploy -n app-transform --create-namespace --set image.digest=sha256:<真实digest>
-```
-
-生产和测试环境使用独立 namespace/Secret。正式发布沿用模板的扫描、签名、验签及 GitOps 流程；默认只进行 CI 构建，GitOps release 需设置仓库变量 `ENABLE_GITOPS_RELEASE=true`。启用前需要在基础设施仓库注册 `transform` 应用和 values，配置 `FOUNDATION_RELEASE_TOKEN`、`ARGO_READ_TOKEN`、`COSIGN_PRIVATE_KEY`、`COSIGN_PASSWORD`，并将 `cosign.pub` 替换为对应公钥。发布验收会执行一次真实翻译。
+首次发布成功后自动设置 `ENABLE_GITOPS_RELEASE=true`，之后推送 `main` 就会自动更新。更换模型密钥时，编辑 GitHub 的 `COHERE_API_KEY` 再点一次 **Run workflow**。发布最后会执行一次真实翻译；变绿表示运行和模型调用都通过检查。发布授权和签名设置已经为此仓库准备好。
 
 ## 官方依据
 

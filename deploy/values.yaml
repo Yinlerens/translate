@@ -5,7 +5,7 @@ expiresAt: ''
 host: transform.apps.makima.sbs
 publicPaths: ['^/api(/.*)?$']
 image:
-  repository: ghcr.io/yinlerens/transform
+  repository: ghcr.io/yinlerens/translate
   digest: ''
   pullPolicy: IfNotPresent
   pullSecret: ghcr-pull

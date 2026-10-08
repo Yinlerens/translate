@@ -91,7 +91,7 @@ jobs:
         retention-days: 7
   release:
     needs: build
-    if: vars.ENABLE_GITOPS_RELEASE == 'true' || inputs.build_only == true
+    if: vars.ENABLE_GITOPS_RELEASE == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     environment: production
     permissions:
@@ -117,24 +117,41 @@ jobs:
       env:
         IMAGE: ${{ needs.build.outputs.image }}
         IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
-      run: "python - <<'PYCODE'\nimport json, os\nwith open(\"release-image.json\", \"w\") as output:\n    json.dump({\"repository\": os.environ[\"IMAGE\"], \"digest\"\
-        : os.environ[\"IMAGE_DIGEST\"], \"source_sha\": os.environ[\"GITHUB_SHA\"]}, output)\nPYCODE\n"
+      run: |
+        python - <<'PYCODE'
+        import json, os
+        with open("release-image.json", "w") as output:
+            json.dump({"repository": os.environ["IMAGE"], "digest": os.environ["IMAGE_DIGEST"], "source_sha": os.environ["GITHUB_SHA"]}, output)
+        PYCODE
     - name: Upload verified release metadata
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: release-image
         path: release-image.json
         retention-days: 7
-    - name: Record verified digest in GitOps
+    - name: Read platform deployment tools
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      with:
+        repository: Yinlerens/cloud-foundation
+        ref: main
+        path: .foundation
+        token: ${{ secrets.FOUNDATION_RELEASE_TOKEN }}
+        persist-credentials: false
+    - name: Prepare GitHub-only registration
+      working-directory: .foundation
+      run: |
+        pip install PyYAML==6.0.3 ruamel.yaml==0.19.1
+        python scripts/download_ci_tool.py kubeseal
+        python -m unittest discover -s tests -v
+    - name: Register or update the service automatically
+      if: inputs.build_only != true
       env:
-        APP_NAME: transform
         FOUNDATION_TOKEN: ${{ secrets.FOUNDATION_RELEASE_TOKEN }}
         IMAGE: ${{ needs.build.outputs.image }}
         IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
-      run: |
-        pip install PyYAML==6.0.3 ruamel.yaml==0.19.1
-        python scripts/update_gitops.py
-      if: inputs.build_only != true
+        COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+        REGISTRY_READ_TOKEN: ${{ secrets.REGISTRY_READ_TOKEN }}
+      run: python .foundation/scripts/register_translate.py
     - name: Verify desired state, deployment and business smoke test
       env:
         APP_NAME: transform
@@ -145,3 +162,8 @@ jobs:
         python scripts/wait_release.py
 
       if: inputs.build_only != true
+    - name: Enable automatic deployment after first successful release
+      if: inputs.build_only != true
+      env:
+        FOUNDATION_TOKEN: ${{ secrets.FOUNDATION_RELEASE_TOKEN }}
+      run: python .foundation/scripts/register_translate.py --enable-delivery
