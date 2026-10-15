@@ -1,7 +1,7 @@
 """External CI gate: Argo revision, target configuration, deployment and smoke."""
 import os,json,time,urllib.request,urllib.error,urllib.parse,base64
 from publish_validated import api,REPO
-name=os.environ['APP_NAME'];token=os.environ['ARGO_READ_TOKEN'];argo='https://argocd.apps.makima.sbs:9443/api/v1';source=os.environ['GITHUB_SHA']
+name=os.environ['APP_NAME'];token=os.environ['ARGO_READ_TOKEN'];argo='https://argocd.apps.makima.sbs/api/v1';source=os.environ['GITHUB_SHA']
 def get(path):
     req=urllib.request.Request(argo+path,headers={'Authorization':'Bearer '+token})
     with urllib.request.urlopen(req,timeout=60) as r:return json.load(r)
@@ -21,7 +21,7 @@ for _ in range(90):
             live=json.loads(get('/applications/'+name+'/resource?'+query)['manifest']);template=live['spec']['template'] if kind=='Deployment' else live['spec']['jobTemplate']['spec']['template'];im=w.get('image') or v['image']
             if template['spec']['containers'][0]['image']!=im['repository']+'@'+im['digest']:complete=False
         if complete:
-            host='https://'+v['host']+(':9443' if name=='console' else '')
+            host='https://'+v['host']
             try:
                 with urllib.request.urlopen(host+'/api',timeout=20) as r:assert r.status<500
             except urllib.error.HTTPError as e:
