@@ -1,13 +1,13 @@
 # transform
 
 服务已接入当前集群，地址为 https://transform.apps.makima.sbs/api；更新和密钥轮换见 [操作步骤](https://github.com/Yinlerens/cloud-foundation/blob/main/docs/translate-deployment.md)。
-推送 main 分支会自动检查、构建和部署，发布最后执行真实翻译验收。
+推送 main 分支会检查、构建并仅更新腾讯云 api-canary；主节点 api 的旧版镜像保持固定。Waypoint 按 GitOps 配置分流，发布最后验证英文金丝雀及一次真实翻译。
 
 基于上级 `application-template` 改造的 Go 翻译微服务，调用 Cohere **North Small Translate**（`north-small-translate-09-2026`），由模型自动识别原文语言，固定翻译成简体中文。保留模板的 `/api` 路由、健康检查、Prometheus、OpenTelemetry、请求追踪、非 root 容器、多架构构建、Helm 与供应链检查。服务无状态，无需数据库、worker 或前端。
 
 ## 本地运行
 
-需要 Go 1.27.1 或更新版本，在 PowerShell 中运行：
+需要 Go 1.27.2 或更新版本，在 PowerShell 中运行：
 
 ```powershell
 $env:COHERE_API_KEY = '<你的 Cohere API Key>'
@@ -23,7 +23,7 @@ go run ./cmd/transform
 ### `POST /api/translate`
 
 ```powershell
-$body = @{ '文本' = 'Hello, world!' } | ConvertTo-Json
+$body = @{ 'text' = 'Hello, world!' } | ConvertTo-Json
 Invoke-RestMethod -Uri http://localhost:8080/api/translate -Method Post -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($body))
 ```
 
@@ -31,33 +31,35 @@ Invoke-RestMethod -Uri http://localhost:8080/api/translate -Method Post -Content
 
 ```json
 {
-  "生成编号": "cohere-generation-id",
-  "译文": "你好，世界！",
-  "目标语言": "简体中文",
-  "模型": "north-small-translate-09-2026",
-  "完成状态": "已完成",
-  "用量": {
-    "词元数量": { "输入词元": 18, "输出词元": 6 },
-    "计费用量": { "输入词元": 18, "输出词元": 6 }
+  "id": "cohere-generation-id",
+  "translated_text": "你好，世界！",
+  "target_language": "简体中文",
+  "model": "north-small-translate-09-2026",
+  "finish_reason": "已完成",
+  "usage": {
+    "tokens": { "input_tokens": 18, "output_tokens": 6 },
+    "billed_units": { "input_tokens": 18, "output_tokens": 6 }
   }
 }
 ```
 
-只需提供 `文本`，无需指定原文语言或目标语言。原文由模型自行识别，响应的 `目标语言` 固定为 `简体中文`。兼容旧版输入字段 `text`，但响应仅使用中文字段。若同时传入 `文本` 和 `text`，两者必须相同。兼容接收 `目标语言` 或旧版 `target_language` 字符串字段，但这些字段不影响翻译目标。
+只需提供 `text`，无需指定原文语言或目标语言。新版仅接受英文字段，`文本`、`目标语言` 及其他未知字段返回 400；不保留中文字段别名。可选的 `target_language` 保留已有行为，不改变固定的简体中文翻译目标。JSON 字段统一为英文 snake_case，译文、语言名称及面向用户的错误说明仍为中文。
 
-`文本` 必填，最多 8000 个 Unicode 字符；请求体最多 64 KiB。原文换行和空白直接传给模型，无需额外调用语言检测接口。服务接受任意语言的输入文本；翻译质量受模型能力限制，官方支持的 52 种语言和地区变体可通过 `/api/languages` 查询，不能保证支持所有人类语言。上游上下文限制仍可能拒绝复杂或较长输入，请分段翻译。
+灰度期间同一公网地址存在两种响应契约：主节点旧版中文 key，腾讯云新版英文 key。`X-API-Contract: english-v2` 标记新版，`X-Release-Version` 标记源码提交。客户端须按标记处理响应；中文请求落到新版时会被拒绝。5% 是大量业务请求下的近似比例，不保证每 20 次恰好一次。
 
-错误统一为 `{"错误":{"类型":"文本无效","说明":"文本不能为空","请求编号":"..."}}`，类型和说明均为中文。无效输入为 400，输入过长为 413，非 JSON 为 415，上游拒绝输入为 422；上游故障/认证失败/译文截断为 502，未配置/上游限流为 503（转发 `Retry-After`），超时为 504。不会将被截断的译文当作成功结果，也不会自动重试模型调用。日志不记录原文、译文或密钥。
+`text` 必填，最多 8000 个 Unicode 字符；请求体最多 64 KiB。原文换行和空白直接传给模型，无需额外调用语言检测接口。服务接受任意语言的输入文本；翻译质量受模型能力限制，官方支持的 52 种语言和地区变体可通过 `/api/languages` 查询，不能保证支持所有人类语言。上游上下文限制仍可能拒绝复杂或较长输入，请分段翻译。
+
+错误统一为 `{"error":{"code":"文本无效","message":"文本不能为空","request_id":"..."}}`，错误类型值和说明仍为中文。无效输入为 400，输入过长为 413，非 JSON 为 415，上游拒绝输入为 422；上游故障/认证失败/译文截断为 502，未配置/上游限流为 503（转发 `Retry-After`），超时为 504。不会将被截断的译文当作成功结果，也不会自动重试模型调用。日志不记录原文、译文或密钥。
 
 | 接口 | 用途 |
 | --- | --- |
 | `GET /api` | 服务、版本、环境与模型信息 |
-| `GET /api/languages` | 中文字段 `支持语言`、`目标语言`，语言条目包含 `语言代码` 和中文 `名称` |
+| `GET /api/languages` | 英文字段 `supported_languages`、`target_language`，语言条目包含 `code` 和中文名称 `name` |
 | `GET /healthz` | 进程存活 |
 | `GET /readyz` | 本地配置就绪，不消耗模型额度、不保证上游即时可用 |
 | `GET /metrics` | Prometheus 指标（保留 `foundation_http_*` 命名） |
 
-所有响应带 `X-Request-ID` 与 `X-Release-Version`。启用追踪后还提供 `X-Trace-ID`，与日志中的 `链路编号` 一致，可直接用于 Grafana Tempo 的 Trace ID 查询。客户端调用翻译、健康检查、指标及语言信息接口均无需提供访问令牌。服务通过 `COHERE_API_KEY` 调用 Cohere 模型。设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后启用 OTLP HTTP traces，支持 W3C `traceparent` 并追踪 Cohere 请求。应用 JSON 日志使用中文消息、级别和字段名（例如 `时间`、`级别`、`消息`、`请求编号`、`状态码`），默认应用、环境和版本分别显示为 `翻译服务`、`开发` 和 `开发版`。所有业务 JSON 响应字段、错误类型、提示、完成状态和语言名称均使用中文；客户端须按新字段读取响应。HTTP 头、接口路径、模型 ID、语言代码、版本摘要和 Prometheus 指标名保留技术协议标识。
+所有响应带 `X-Request-ID` 与 `X-Release-Version`。启用追踪后还提供 `X-Trace-ID`，与日志中的 `链路编号` 一致，可直接用于 Grafana Tempo 的 Trace ID 查询。客户端调用翻译、健康检查、指标及语言信息接口均无需提供访问令牌。服务通过 `COHERE_API_KEY` 调用 Cohere 模型。设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后启用 OTLP HTTP traces，支持 W3C `traceparent` 并追踪 Cohere 请求。应用 JSON 日志使用中文消息、级别和字段名（例如 `时间`、`级别`、`消息`、`请求编号`、`状态码`），默认应用、环境和版本分别显示为 `翻译服务`、`开发` 和 `开发版`。所有业务 JSON 字段使用英文 snake_case，错误类型值、提示、完成状态和语言名称保留中文。日志字段维持原有中文格式。HTTP 头、接口路径、模型 ID、语言代码、版本摘要和 Prometheus 指标名保留技术协议标识。
 
 ## 配置
 
@@ -86,11 +88,11 @@ CI 运行格式检查、`go vet`、race tests、构建、gitleaks、Helm 与 kub
 
 ## Helm 与发布
 
-`deploy` 沿用模板的 Gateway、Cilium、ServiceMonitor 约定，默认域名为 `transform.apps.makima.sbs`，镜像为 `ghcr.io/yinlerens/translate`，按实际仓库和集群覆盖。仅运行一个 API Deployment。探针与指标不通过公网路由；Cilium 只允许 DNS、遥测和 `api.cohere.com:443` 出站，调整上游地址时需同步 `externalDomains`。容器 UID/GID 10001，禁止提权，只读根文件系统，90 秒终止宽限期。HTTPRoute 请求/后端超时为 75/70 秒，以覆盖最长 60 秒的模型调用，需要 Gateway 支持 HTTPRoute timeouts。
+`deploy` 沿用模板的 Gateway、Cilium、ServiceMonitor 约定，默认域名为 `transform.apps.makima.sbs`，镜像为 `ghcr.io/yinlerens/translate`，按实际仓库和集群覆盖。生产使用主节点稳定版和腾讯云金丝雀两个独立 Deployment，镜像和版本分别固定；Waypoint 按比例选择后端。探针与指标不通过公网路由；Cilium 只允许 DNS、遥测和 `api.cohere.com:443` 出站，调整上游地址时需同步 `externalDomains`。容器 UID/GID 10001，禁止提权，只读根文件系统，90 秒终止宽限期。HTTPRoute 请求/后端超时为 75/70 秒，以覆盖最长 60 秒的模型调用，需要 Gateway 支持 HTTPRoute timeouts。
 
 当前系统的 `transform` 应用已经在平台登记，生产部署通过 GitHub Actions 更新现有 GitOps 配置。推送 `main` 或在 `delivery` 页面点击 **Run workflow** 都会检查、构建、签名、更新镜像 digest，并通过 Argo CD 自动部署。工作流不会创建新应用、namespace 或镜像拉取身份。
 
-更换模型密钥时，编辑 GitHub 的 `COHERE_API_KEY` 再点一次 **Run workflow**；流程将密钥加密保存并触发服务更新。未提供新密钥时沿用集群已有 Secret。发布最后会执行一次真实翻译；变绿表示运行和模型调用都通过检查。发布授权和签名设置已经为此仓库准备好。
+金丝雀流水线沿用集群现有模型 Secret，不自动轮换共享密钥。密钥轮换须通过独立 GitOps 操作并验证两组实例。发布最后会执行一次真实翻译；变绿表示运行和模型调用都通过检查。发布授权和签名设置已经为此仓库准备好。
 
 ## 官方依据
 
@@ -98,3 +100,9 @@ CI 运行格式检查、`go vet`、race tests、构建、gitleaks、Helm 与 kub
 - [Chat V2：POST https://api.cohere.com/v2/chat](https://docs.cohere.com/reference/chat)
 
 官方文档说明该模型可通过免费层 Chat V2 使用；实际账号权限和额度由 Cohere 决定。
+
+## 金丝雀控制
+
+在 cloud-foundation 的 transform values 中修改 `mesh.canary.weight`。`0` 将新业务请求全部交给稳定版，`5` 为当前目标；发布脚本只更新 `workloads.api-canary.image` 与 `releaseVersion`，不会改权重或自动晋级稳定版。入口 HTTPRoute 仍只有 transform-api 一个后端，分流由绑定该 Service 的 Istio HTTPRoute 执行。
+
+`/readyz` 仍检查稳定版本地配置，不能代替腾讯云到 Cohere 的业务验收。变更权重前需要验证金丝雀真实翻译；用不调用模型的 `/api` 和空输入错误请求采样统计比例，避免用模型调用压测。

@@ -21,22 +21,22 @@ type Error struct {
 func (e *Error) Error() string { return e.Code }
 
 type Usage struct {
-	Tokens      *TokenUsage `json:"词元数量,omitempty"`
-	BilledUnits *TokenUsage `json:"计费用量,omitempty"`
+	Tokens      *TokenUsage `json:"tokens,omitempty"`
+	BilledUnits *TokenUsage `json:"billed_units,omitempty"`
 }
 
 type TokenUsage struct {
-	InputTokens  float64 `json:"输入词元"`
-	OutputTokens float64 `json:"输出词元"`
+	InputTokens  float64 `json:"input_tokens"`
+	OutputTokens float64 `json:"output_tokens"`
 }
 
 type Result struct {
-	ID             string `json:"生成编号"`
-	TranslatedText string `json:"译文"`
-	TargetLanguage string `json:"目标语言"`
-	Model          string `json:"模型"`
-	FinishReason   string `json:"完成状态"`
-	Usage          *Usage `json:"用量,omitempty"`
+	ID             string `json:"id"`
+	TranslatedText string `json:"translated_text"`
+	TargetLanguage string `json:"target_language"`
+	Model          string `json:"model"`
+	FinishReason   string `json:"finish_reason"`
+	Usage          *Usage `json:"usage,omitempty"`
 }
 
 type Client struct {

@@ -1,39 +1,15 @@
 #!/usr/bin/env python3
-"""Update the registered translate service and optionally rotate its model key."""
-import base64
+"""Update only the registered remote canary; never promote the stable release."""
 import copy
-import json
 import os
-from pathlib import Path
 import re
-import subprocess
 import sys
-import uuid
 
 import yaml
 
 SOURCE = 'Yinlerens/translate'
 APP = 'transform'
-NAMESPACE = 'app-transform'
 VALUES = 'clusters/production/applications/transform/values.yaml'
-SECRET = 'clusters/production/applications/transform/secrets/transform-api.yaml'
-CERTIFICATE = Path('.foundation/clusters/production/sealed-secrets.crt')
-
-
-def seal_model_key(value):
-    obj = {'apiVersion': 'v1', 'kind': 'Secret', 'type': 'Opaque',
-           'metadata': {'name': 'transform-api', 'namespace': NAMESPACE},
-           'data': {'cohere-api-key': base64.b64encode(value.encode()).decode()}}
-    result = subprocess.run(
-        ['kubeseal', '--cert', str(CERTIFICATE), '--scope=strict', '--format=json'],
-        input=json.dumps(obj), text=True, capture_output=True, timeout=30)
-    if result.returncode:
-        raise RuntimeError('模型密钥加密失败，未提交配置。')
-    doc = json.loads(result.stdout)
-    text = yaml.safe_dump(doc, sort_keys=False)
-    for ciphertext in doc['spec']['encryptedData'].values():
-        text = text.replace(ciphertext, ciphertext + ' # gitleaks:allow -- Sealed Secrets ciphertext')
-    return text
 
 
 def release_proposal(current, image, model_key=''):
@@ -45,21 +21,22 @@ def release_proposal(current, image, model_key=''):
             r'sha256:[a-f0-9]{64}', image.get('digest', '')) or not re.fullmatch(
             r'[a-f0-9]{40}', image.get('source_sha', '')):
         raise RuntimeError('镜像与源码仓库不一致或版本无效，停止更新。')
+    canary = current.get('mesh', {}).get('canary', {})
+    if not current.get('mesh', {}).get('enabled') or not canary.get('enabled') or (
+            canary.get('stableWorkload'), canary.get('candidateWorkload')) != ('api', 'api-canary'):
+        raise RuntimeError('平台尚未配置预期的 Waypoint 金丝雀，禁止更新稳定版本。')
+    stable = current.get('workloads', {}).get('api', {})
+    candidate = current.get('workloads', {}).get('api-canary', {})
+    if not stable.get('image', {}).get('digest') or not stable.get('releaseVersion') or (
+            candidate.get('nodeSelector', {}).get('foundation.makima.sbs/site') != 'remote'):
+        raise RuntimeError('稳定版本未独立固定或金丝雀未绑定远端节点，停止更新。')
+    if model_key.strip():
+        raise RuntimeError('金丝雀更新不轮换共享模型密钥；请通过独立的密钥轮换流程操作。')
     v = copy.deepcopy(current)
-    v.setdefault('image', {}).update(repository=image['repository'], digest=image['digest'],
-                                    pullPolicy='IfNotPresent', pullSecret='ghcr-pull')
-    v['releaseVersion'] = image['source_sha']
-    files = {}
-    model_key = model_key.strip()
-    if model_key:
-        workload = v.get('workloads', {}).get('api')
-        expected = {'name': 'transform-api', 'key': 'cohere-api-key'}
-        if not workload or workload.get('secretEnv', {}).get('COHERE_API_KEY') != expected:
-            raise RuntimeError('应用未引用预期的模型 Secret，停止密钥轮换。')
-        files[SECRET] = seal_model_key(model_key)
-        workload.setdefault('annotations', {})['foundation.makima.sbs/rollout-revision'] = str(uuid.uuid4())
-    files[VALUES] = yaml.safe_dump(v, sort_keys=False)
-    return files
+    workload = v['workloads']['api-canary']
+    workload['image'] = dict(current['image'], repository=image['repository'], digest=image['digest'])
+    workload['releaseVersion'] = image['source_sha']
+    return {VALUES: yaml.safe_dump(v, sort_keys=False, allow_unicode=True)}
 
 
 def main():
@@ -72,9 +49,8 @@ def main():
     current = read(VALUES, base)
     image = {'repository': os.environ['IMAGE'], 'digest': os.environ['IMAGE_DIGEST'],
              'source_sha': os.environ['GITHUB_SHA']}
-    files = release_proposal(yaml.safe_load(current) if current else None, image,
-                             os.environ.get('COHERE_API_KEY', ''))
-    publish(files, 'Release translate ' + image['source_sha'][:12], base)
+    files = release_proposal(yaml.safe_load(current) if current else None, image)
+    publish(files, 'Release translate canary ' + image['source_sha'][:12], base)
 
 
 if __name__ == '__main__':

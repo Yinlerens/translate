@@ -137,12 +137,11 @@ jobs:
       run: |
         pip install PyYAML==6.0.3 ruamel.yaml==0.19.1
         python scripts/download_ci_tool.py kubeseal
-    - name: Update the registered service
+    - name: Update only the registered remote canary
       env:
         FOUNDATION_TOKEN: ${{ secrets.FOUNDATION_RELEASE_TOKEN }}
         IMAGE: ${{ needs.build.outputs.image }}
         IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
-        COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
       run: python scripts/update_gitops.py
     - name: Verify desired state, deployment and business smoke test
       env:

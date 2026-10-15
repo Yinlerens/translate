@@ -41,7 +41,7 @@ func TestTranslationEndToEnd(t *testing.T) {
 	defer upstream.Close()
 	var logs bytes.Buffer
 	handler := testHandler(config.Config{BaseURL: upstream.URL, Model: "north-small-translate-09-2026", APIKey: "provider-key", Version: "test-release", Timeout: time.Second}, &logs)
-	response := request(handler, "POST", "/api/translate", `{"文本":"secret-source-text"}`, "application/json; charset=utf-8")
+	response := request(handler, "POST", "/api/translate", `{"text":"secret-source-text"}`, "application/json; charset=utf-8")
 	if response.Code != 200 {
 		t.Fatalf("status %d: %s", response.Code, response.Body)
 	}
@@ -55,9 +55,12 @@ func TestTranslationEndToEnd(t *testing.T) {
 	if result.FinishReason != "已完成" || result.Usage == nil || result.Usage.Tokens.InputTokens != 12 || result.Usage.BilledUnits.InputTokens != 10 {
 		t.Fatalf("用量或完成状态丢失：%+v", result)
 	}
-	assertChineseFields(t, response.Body.Bytes())
+	assertEnglishFields(t, response.Body.Bytes())
 	if calls.Load() != 1 {
 		t.Fatalf("expected one upstream call, got %d", calls.Load())
+	}
+	if response.Header().Get("X-API-Contract") != "english-v2" {
+		t.Fatal("missing API contract marker")
 	}
 	if response.Header().Get("X-Request-ID") != "contract-test" || response.Header().Get("X-Release-Version") != "test-release" {
 		t.Fatal("missing trace/release headers")
@@ -92,14 +95,14 @@ func TestRejectedRequestsDoNotCallProvider(t *testing.T) {
 		{"请求体过大", "POST", "/api/translate", `{"text":"` + strings.Repeat("x", maxBodyBytes) + `","target_language":"fr"}`, "application/json", "请求体过大", 413},
 		{"wrong_method", "GET", "/api/translate", "", "", "请求方法不允许", 405},
 		{"wrong_route", "POST", "/missing", "", "", "接口不存在", 404},
-		{"conflicting_text", "POST", "/api/translate", `{"文本":"你好","text":"hello"}`, "application/json", "文本字段冲突", 400},
+		{"chinese_key_rejected", "POST", "/api/translate", `{"文本":"hello"}`, "application/json", "请求格式错误", 400},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := request(handler, test.method, test.path, test.body, test.contentType)
-			if response.Code != test.status || !strings.Contains(response.Body.String(), `"类型":"`+test.code+`"`) {
+			if response.Code != test.status || !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
 				t.Fatalf("status %d: %s", response.Code, response.Body)
 			}
-			assertChineseFields(t, response.Body.Bytes())
+			assertEnglishFields(t, response.Body.Bytes())
 		})
 	}
 	if calls.Load() != 0 {
@@ -133,7 +136,7 @@ func TestAutoSourceAndFixedChineseTarget(t *testing.T) {
 			}))
 			defer upstream.Close()
 			handler := testHandler(config.Config{BaseURL: upstream.URL, APIKey: "provider-key", Timeout: time.Second}, io.Discard)
-			input := map[string]string{"文本": test.text}
+			input := map[string]string{"text": test.text}
 			if test.name == "legacy_target" {
 				input = map[string]string{"text": test.text}
 			}
@@ -164,7 +167,7 @@ func TestHealthAndNotConfigured(t *testing.T) {
 			t.Errorf("%s status: %d", path, response.Code)
 		}
 		if path != "/metrics" {
-			assertChineseFields(t, response.Body.Bytes())
+			assertEnglishFields(t, response.Body.Bytes())
 		}
 	}
 	response := request(handler, "POST", "/api/translate", `{"text":"hello","target_language":"French"}`, "application/json")
@@ -180,7 +183,7 @@ func TestHealthAndNotConfigured(t *testing.T) {
 	}
 }
 
-func assertChineseFields(t *testing.T, data []byte) {
+func assertEnglishFields(t *testing.T, data []byte) {
 	t.Helper()
 	var decoded any
 	if err := json.Unmarshal(data, &decoded); err != nil {
@@ -192,8 +195,8 @@ func assertChineseFields(t *testing.T, data []byte) {
 		case map[string]any:
 			for key, child := range value {
 				for _, char := range key {
-					if char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' {
-						t.Errorf("响应仍有英文字段：%s", key)
+					if char > 127 {
+						t.Errorf("response has non-English key: %s", key)
 						break
 					}
 				}
@@ -218,7 +221,7 @@ func TestTranslationWithoutAuthenticationOverHTTP(t *testing.T) {
 	defer upstream.Close()
 	server := httptest.NewServer(testHandler(config.Config{BaseURL: upstream.URL, APIKey: "provider-key", Timeout: time.Second}, io.Discard))
 	defer server.Close()
-	response, err := server.Client().Post(server.URL+"/api/translate", "application/json", strings.NewReader(`{"文本":"hello"}`))
+	response, err := server.Client().Post(server.URL+"/api/translate", "application/json", strings.NewReader(`{"text":"hello"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,13 +230,13 @@ func TestTranslationWithoutAuthenticationOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != 200 || !strings.Contains(string(body), `"译文":"你好！"`) {
+	if response.StatusCode != 200 || !strings.Contains(string(body), `"translated_text":"你好！"`) {
 		t.Fatalf("无需认证的翻译响应不正确：%d %s", response.StatusCode, body)
 	}
 	if response.Header.Get("WWW-Authenticate") != "" {
 		t.Fatal("响应仍包含认证要求")
 	}
-	assertChineseFields(t, body)
+	assertEnglishFields(t, body)
 }
 
 func TestUpstreamFailureResponse(t *testing.T) {

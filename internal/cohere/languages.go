@@ -1,8 +1,8 @@
 package cohere
 
 type Language struct {
-	Code string `json:"语言代码"`
-	Name string `json:"名称"`
+	Code string `json:"code"`
+	Name string `json:"name"`
 }
 
 // Codes follow Cohere's supported language list; names are localized for clients.

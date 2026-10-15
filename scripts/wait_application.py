@@ -8,12 +8,12 @@ def get(path):
 path=f'clusters/production/applications/{name}/values.yaml'
 import yaml
 v=yaml.safe_load(base64.b64decode(api('GET',f'/repos/{REPO}/contents/{path}')['content']))
-assert v['releaseVersion']==source,'应用目标版本在发布后发生变化'
+assert v['workloads']['api-canary']['releaseVersion']==source,'应用目标版本在发布后发生变化'
 for component in ['foundation','foundation-resources',name]:get('/applications/'+component+'?refresh=hard')
 for _ in range(90):
     a=get('/applications/'+name);s=a.get('status',{});sync=s.get('sync',{})
     current=yaml.safe_load(base64.b64decode(api('GET',f'/repos/{REPO}/contents/{path}')['content']))
-    if current['releaseVersion']!=source:raise SystemExit('应用已被其他版本替换，无法确认本次发布')
+    if current['workloads']['api-canary']['releaseVersion']!=source:raise SystemExit('应用已被其他版本替换，无法确认本次发布')
     if sync.get('status')=='Synced' and s.get('health',{}).get('status')=='Healthy':
         complete=True
         for component,w in v['workloads'].items():

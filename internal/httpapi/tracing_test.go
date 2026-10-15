@@ -34,7 +34,7 @@ func TestTraceHeaderCorrelatesResponseAndLog(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var logs bytes.Buffer
 			handler := testHandler(config.Config{Version: "trace-test"}, &logs)
-			r := httptest.NewRequest(test.method, test.path, strings.NewReader(`{"文本":""}`))
+			r := httptest.NewRequest(test.method, test.path, strings.NewReader(`{"text":""}`))
 			r.Header.Set("Content-Type", "application/json")
 			r.Header.Set("Traceparent", test.parent)
 			r.Header.Set("X-Request-ID", "trace-header-test")

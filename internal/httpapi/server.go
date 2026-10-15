@@ -39,20 +39,20 @@ func New(cfg config.Config, client *cohere.Client, logger *slog.Logger) http.Han
 	registry.MustRegister(count, latency, prometheus.NewGoCollector(), prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]string{"状态": "正常", "角色": cfg.RoleLabel(), "版本": cfg.VersionLabel()})
+		writeJSON(w, 200, map[string]string{"status": "ok", "role": cfg.RoleLabel(), "version": cfg.VersionLabel()})
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		if !client.Ready() {
 			writeError(w, r, 503, "未配置", "尚未配置 COHERE_API_KEY")
 			return
 		}
-		writeJSON(w, 200, map[string]string{"状态": "已就绪"})
+		writeJSON(w, 200, map[string]string{"status": "ready"})
 	})
 	mux.HandleFunc("GET /api", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]string{"服务": cfg.AppLabel(), "版本": cfg.VersionLabel(), "环境": cfg.EnvironmentLabel(), "模型": cfg.Model, "目标语言": cohere.TargetLanguageName})
+		writeJSON(w, 200, map[string]string{"service": cfg.AppLabel(), "version": cfg.VersionLabel(), "environment": cfg.EnvironmentLabel(), "model": cfg.Model, "target_language": cohere.TargetLanguageName})
 	})
 	mux.HandleFunc("GET /api/languages", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"支持语言": cohere.Languages(), "目标语言": cohere.TargetLanguageName})
+		writeJSON(w, 200, map[string]any{"supported_languages": cohere.Languages(), "target_language": cohere.TargetLanguageName})
 	})
 	mux.HandleFunc("POST /api/translate", s.translate)
 	mux.Handle("GET /metrics", promhttp.HandlerFor(chineseMetrics(registry), promhttp.HandlerOpts{ErrorHandling: promhttp.PanicOnError}))
@@ -89,6 +89,7 @@ func New(cfg config.Config, client *cohere.Client, logger *slog.Logger) http.Han
 		}
 		w.Header().Set("X-Request-ID", id)
 		w.Header().Set("X-Release-Version", cfg.Version)
+		w.Header().Set("X-API-Contract", "english-v2")
 		if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
 			w.Header().Set("X-Trace-ID", sc.TraceID().String())
 		}
@@ -132,11 +133,9 @@ func (s *Server) translate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Text       *string `json:"文本"`
-		LegacyText *string `json:"text"`
-		// Accepted for existing clients; the translation target always stays zh-CN.
-		TargetLanguage        string `json:"target_language"`
-		ChineseTargetLanguage string `json:"目标语言"`
+		Text *string `json:"text"`
+		// The target remains Simplified Chinese, matching the existing contract.
+		TargetLanguage string `json:"target_language"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -152,15 +151,9 @@ func (s *Server) translate(w http.ResponseWriter, r *http.Request) {
 		decodeError(w, r, err)
 		return
 	}
-	if input.Text != nil && input.LegacyText != nil && *input.Text != *input.LegacyText {
-		writeError(w, r, 400, "文本字段冲突", "文本与旧版 text 字段的内容不一致")
-		return
-	}
 	text := ""
 	if input.Text != nil {
 		text = *input.Text
-	} else if input.LegacyText != nil {
-		text = *input.LegacyText
 	}
 	if strings.TrimSpace(text) == "" {
 		writeError(w, r, 400, "文本无效", "文本不能为空")
@@ -192,11 +185,11 @@ func decodeError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, 413, "请求体过大", "请求体不能超过 65536 字节")
 		return
 	}
-	writeError(w, r, 400, "请求格式错误", "请求体必须为一个包含“文本”字段的 JSON 对象")
+	writeError(w, r, 400, "请求格式错误", "请求体必须为一个包含 text 字段的 JSON 对象")
 }
 
 func writeError(w http.ResponseWriter, _ *http.Request, status int, code, message string) {
-	writeJSON(w, status, map[string]any{"错误": map[string]string{"类型": code, "说明": message, "请求编号": w.Header().Get("X-Request-ID")}})
+	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message, "request_id": w.Header().Get("X-Request-ID")}})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
